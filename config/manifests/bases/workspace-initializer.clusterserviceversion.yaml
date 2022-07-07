@@ -1,0 +1,41 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: workspace-initializer.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions: {}
+  description: workspace initializer
+  displayName: workspace initializer
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - kcp
+  links:
+  - name: Workspace Initializer
+    url: https://workspace-initializer.domain
+  maintainers:
+  - email: me
+    name: me
+  maturity: alpha
+  provider:
+    name: Devtools
+  version: 0.0.0

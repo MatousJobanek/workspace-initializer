@@ -1,0 +1,272 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workspace-initializer-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workspace-initializer-controller-manager
+  namespace: workspace-initializer-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workspace-initializer-leader-election-role
+  namespace: workspace-initializer-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: workspace-initializer-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspaces/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspaces/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspacetypes
+  verbs:
+  - create
+  - delete
+  - get
+  - initialize
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspacetypes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspacetypes/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workspace-initializer-leader-election-rolebinding
+  namespace: workspace-initializer-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workspace-initializer-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: workspace-initializer-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workspace-initializer-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workspace-initializer-manager-role
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: workspace-initializer-system
+---
+apiVersion: v1
+data:
+  controller_manager_config.yaml: |
+    apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
+    kind: ControllerManagerConfig
+    health:
+      healthProbeBindAddress: :8081
+    metrics:
+      bindAddress: 127.0.0.1:8080
+    webhook:
+      port: 9443
+    leaderElection:
+      leaderElect: true
+      resourceName: f208085d.appstudio.kcp.com
+kind: ConfigMap
+metadata:
+  name: workspace-initializer-manager-config
+  namespace: workspace-initializer-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: workspace-initializer-controller-manager
+  namespace: workspace-initializer-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        command:
+        - workspace-provisioner
+        env:
+        - name: WATCH_NAMESPACE
+          value: workspace-initializer-system
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        image: quay.io/matousjobanek/workspace-provisioner:latest
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 10
+---
+apiVersion: tenancy.kcp.dev/v1alpha1
+kind: ClusterWorkspaceType
+metadata:
+  name: appstudio
+  namespace: workspace-initializer-system
+spec:
+  additionalWorkspaceLabels:
+    workloads.kcp.dev/schedulable: "true"
+  allowedChildren:
+    types:
+    - name: Environment
+      path: root:plane:usersignup
+  allowedParents:
+    any: true
+  defaultChildWorkspaceType:
+    name: Environment
+    path: root:plane:usersignup
+  initializer: true
+---
+apiVersion: tenancy.kcp.dev/v1alpha1
+kind: ClusterWorkspaceType
+metadata:
+  name: environment
+  namespace: workspace-initializer-system
+spec:
+  additionalWorkspaceLabels:
+    workloads.kcp.dev/schedulable: "true"
+  allowedParents:
+    type:
+    - name: Appstudio
+      path: root:plane:usersignup
+  initializer: true

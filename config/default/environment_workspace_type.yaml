@@ -1,0 +1,12 @@
+apiVersion: tenancy.kcp.dev/v1alpha1
+kind: ClusterWorkspaceType
+metadata:
+  name: environment
+spec:
+  additionalWorkspaceLabels:
+    workloads.kcp.dev/schedulable: "true"
+  allowedParents:
+    type:
+    - name: Appstudio
+      path: root:plane:usersignup
+  initializer: true
