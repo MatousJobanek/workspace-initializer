@@ -76,3 +76,5 @@ resources:
 - namespace.yaml
 - appstudio_workspace_type.yaml
 - environment_workspace_type.yaml
+- role.yaml
+- role_binding.yaml

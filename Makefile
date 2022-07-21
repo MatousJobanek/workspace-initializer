@@ -113,6 +113,7 @@ podman-build: build ## Build docker image with the manager.
 .PHONY: podman-push
 podman-push: podman-build ## Push docker image with the manager.
 	podman push ${IMG}
+	kubectl delete pods -A -l control-plane=controller-manager
 
 ##@ Deployment
 

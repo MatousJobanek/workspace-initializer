@@ -50,6 +50,19 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: workspace-initializer-init-cwt
+rules:
+- apiGroups:
+  - tenancy.kcp.dev
+  resources:
+  - clusterworkspacetypes
+  verbs:
+  - initialize
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
   creationTimestamp: null
   name: workspace-initializer-manager-role
 rules:
@@ -146,6 +159,19 @@ subjects:
 - kind: ServiceAccount
   name: default
   namespace: workspace-initializer-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workspace-initializer-cwt-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workspace-initializer-init-cwt
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: system:authenticated
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -247,14 +273,13 @@ spec:
   additionalWorkspaceLabels:
     workloads.kcp.dev/schedulable: "true"
   allowedChildren:
-    types:
-    - name: Environment
-      path: root:plane:usersignup
+    any: true
   allowedParents:
     any: true
-  defaultChildWorkspaceType:
-    name: Environment
-    path: root:plane:usersignup
+  extend:
+    with:
+    - name: universal
+      path: root
   initializer: true
 ---
 apiVersion: tenancy.kcp.dev/v1alpha1

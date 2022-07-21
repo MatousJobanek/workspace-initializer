@@ -19,12 +19,15 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	kcpclient "github.com/kcp-dev/apimachinery/pkg/client"
 	"github.com/kcp-dev/kcp/pkg/apis/apis/v1alpha1"
 	v1alpha12 "github.com/kcp-dev/kcp/pkg/apis/tenancy/v1alpha1"
 	"github.com/kcp-dev/logicalcluster"
+	"k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,16 +37,16 @@ import (
 
 // WorkspaceInitializer reconciles a ClusterWorkspace object
 type WorkspaceInitializer struct {
-	Client    client.Client
-	Scheme    *runtime.Scheme
-	Namespace string
+	Client client.Client
+	Scheme *runtime.Scheme
+	Config *rest.Config
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *WorkspaceInitializer) SetupWithManager(mgr ctrl.Manager) error {
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha12.ClusterWorkspace{})
-	return builder.Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&v1alpha12.ClusterWorkspace{}).
+		Complete(r)
 }
 
 //+kubebuilder:rbac:groups=tenancy.kcp.dev,resources=clusterworkspaces,verbs=get;list;watch;create;update;patch;delete
@@ -63,58 +66,89 @@ func (r *WorkspaceInitializer) Reconcile(ctx context.Context, req ctrl.Request) 
 	logger := log.FromContext(ctx)
 	logger.Info("reconciling")
 
+	workspaceCtx := kcpclient.WithCluster(ctx, logicalcluster.New(req.ClusterName))
+	workspace := &v1alpha12.ClusterWorkspace{}
+	if err := r.Client.Get(workspaceCtx, req.NamespacedName, workspace); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
 	clusterName := fmt.Sprintf("%s:%s", req.ClusterName, req.Name)
 	logger.Info("reconciling for clusterName", "clusterName", clusterName)
+	cfg := rest.CopyConfig(r.Config)
+	cfg.Host = fmt.Sprintf("%s/clusters/%s", cfg.Host, clusterName)
+	cl, err := client.New(cfg, client.Options{
+		Scheme: r.Scheme,
+	})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-	//ctx = kcpclient.WithCluster(ctx, logicalcluster.New(req.ClusterName))
-	//
-	//cw := &v1alpha12.ClusterWorkspace{}
-	//if err := r.Client.Get(ctx, req.NamespacedName, cw); err != nil {
-	//	return ctrl.Result{}, err
-	//}
 	ctx = kcpclient.WithCluster(ctx, logicalcluster.New(clusterName))
 
 	apiBinding := &v1alpha1.APIBinding{
+		TypeMeta: v1.TypeMeta{
+			Kind:       "APIBinding",
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+		},
 		ObjectMeta: v1.ObjectMeta{
-			Name:        "workload",
+			Name:        "crcworkload",
 			ClusterName: clusterName,
 		},
 		Spec: v1alpha1.APIBindingSpec{
 			Reference: v1alpha1.ExportReference{
 				Workspace: &v1alpha1.WorkspaceExportReference{
 					ExportName: "kubernetes",
-					Path:       "root:plane:crc",
+					Path:       "root:synctarget",
+				},
+			},
+		},
+	}
+	fmt.Println("creating first APIBinding")
+	if err := cl.Create(ctx, apiBinding); err != nil {
+		if !errors.IsAlreadyExists(err) {
+			return ctrl.Result{}, err
+		}
+	}
+
+	apiBinding = &v1alpha1.APIBinding{
+		TypeMeta: v1.TypeMeta{
+			Kind:       "APIBinding",
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: v1.ObjectMeta{
+			Name:        "has",
+			ClusterName: clusterName,
+		},
+		Spec: v1alpha1.APIBindingSpec{
+			Reference: v1alpha1.ExportReference{
+				Workspace: &v1alpha1.WorkspaceExportReference{
+					ExportName: "application-service-has",
+					Path:       "root:has",
 				},
 			},
 		},
 	}
 
-	return ctrl.Result{}, r.Client.Create(ctx, apiBinding)
-	//bindings := &v1alpha1.APIBindingList{}
-	//r.Client.List(context.TODO())
-	//err := r.Client().Get(context.TODO(), req.NamespacedName, workspace)
-	//if err != nil {
-	//	if errors.IsNotFound(err) {
-	//		// Request object not found, could have been deleted after reconcile request.
-	//		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-	//		// Return and don't requeue
-	//		return reconcile.Result{}, nil
+	fmt.Println("creating second APIBinding")
+	if err := cl.Create(ctx, apiBinding); err != nil {
+		if !errors.IsAlreadyExists(err) {
+			return ctrl.Result{}, err
+		}
+	} else {
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, nil
+	}
+	//for i, init := range workspace.Status.Initializers {
+	//	if init == "root:plane:usersignup:appstudio" {
+	//		workspace.Status.Initializers = append(workspace.Status.Initializers[:i], workspace.Status.Initializers[i+1:]...)
+	//		return ctrl.Result{Requeue: true, RequeueAfter: time.Second}, r.Client.Status().Update(workspaceCtx, workspace)
 	//	}
-	//	// Error reading the object - requeue the request.
-	//	return reconcile.Result{}, err
 	//}
-	//if workspace.Status.Phase != v1alpha12.ClusterWorkspacePhaseReady || workspace.Status.BaseURL == "" {
-	//	logger.Info("workspace is not ready yet")
-	//	return ctrl.Result{}, nil
-	//}
-	//if workspace.Spec.Type != "Universal" {
-	//	logger.Info("workspace is not of universal type")
-	//	return ctrl.Result{}, nil
-	//}
-	//if workspace.Labels["type"] != "appstudio" {
-	//	logger.Info("workspace is not an appstudio workspace")
-	//	return ctrl.Result{}, nil
-	//}
+
 	//
-	//return ctrl.Result{}, nil
+	workspace.Status.Initializers = nil
+	fmt.Println("removing all initializers because of the bug in kcp")
+	return ctrl.Result{}, r.Client.Status().Update(workspaceCtx, workspace)
 }

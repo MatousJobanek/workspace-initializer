@@ -6,12 +6,17 @@ spec:
   additionalWorkspaceLabels:
     workloads.kcp.dev/schedulable: "true"
   allowedChildren:
-    types:
-    - name: Environment
-      path: root:plane:usersignup
+    any: true
+#    types:
+#    - name: Environment
+#      path: root:plane:usersignup
   allowedParents:
     any: true
-  defaultChildWorkspaceType:
-    name: Environment
-    path: root:plane:usersignup
+#  defaultChildWorkspaceType:
+#    name: Environment
+#    path: root:plane:usersignu
+  extend:
+    with:
+      - name: universal
+        path: root
   initializer: true
